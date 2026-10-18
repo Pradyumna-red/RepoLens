@@ -1,2 +1,3 @@
-# Python dependencies for RepoLens backend
-# This file will be populated in Milestone 2
+fastapi
+uvicorn[standard]
+python-multipart
