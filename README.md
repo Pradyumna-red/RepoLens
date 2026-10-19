@@ -111,17 +111,15 @@ Frontend will run on: `http://localhost:5173`
 
 This project follows an 8-milestone development plan. See `plan.md` for detailed information about each milestone.
 
-### Current Status: Milestone 1 ✅
-- [x] Project structure created
-- [x] Git repository initialized
-- [x] Python virtual environment set up
-- [x] Vite + React initialized
-- [x] Basic documentation
+### Current Status: Milestone 3 ✅
+- [x] **Milestone 1**: Project setup complete
+- [x] **Milestone 2**: FastAPI backend with health endpoint
+- [x] **Milestone 3**: File upload & security (ZIP validation, path traversal prevention)
 
-### Next: Milestone 2
-- [ ] FastAPI backend foundation
-- [ ] Health check endpoint
-- [ ] CORS configuration
+### Next: Milestone 4
+- [ ] AST parser for Python import extraction
+- [ ] Import resolution (relative to absolute)
+- [ ] Unit tests for analyzer
 
 ## Testing
 
