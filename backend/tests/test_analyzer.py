@@ -288,3 +288,128 @@ class MyClass:
 
     finally:
         os.remove(file_path)
+
+
+def test_parse_bare_relative_import_single():
+    """Test parsing a bare relative import with a single alias."""
+    code = """
+from . import helpers
+"""
+    file_path = create_temp_python_file(code)
+
+    # Create a temporary project structure to provide project_root
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Create: project/src/utils/helpers.py
+        src_dir = Path(temp_dir) / 'src' / 'utils'
+        src_dir.mkdir(parents=True)
+        helpers_file = src_dir / 'helpers.py'
+        helpers_file.write_text(code)
+
+        # Set project_root to the temp_dir
+        project_root = str(temp_dir)
+
+        result = parse_imports(str(helpers_file), project_root)
+
+        # Expect: from_imports contains the resolved module for the alias
+        assert len(result['from_imports']) == 1
+        assert 'src.utils.helpers' in result['from_imports']
+        assert len(result['imports']) == 0
+
+    finally:
+        # Cleanup
+        import shutil
+        shutil.rmtree(temp_dir)
+        os.remove(file_path)
+
+
+def test_parse_bare_relative_import_multiple():
+    """Test parsing a bare relative import with multiple aliases."""
+    code = """
+from . import a, b
+"""
+    file_path = create_temp_python_file(code)
+
+    # Create a temporary project structure to provide project_root
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Create: project/src/utils/helpers.py
+        src_dir = Path(temp_dir) / 'src' / 'utils'
+        src_dir.mkdir(parents=True)
+        helpers_file = src_dir / 'helpers.py'
+        helpers_file.write_text(code)
+
+        # Set project_root to the temp_dir
+        project_root = str(temp_dir)
+
+        result = parse_imports(str(helpers_file), project_root)
+
+        # Expect: from_imports contains the resolved modules for each alias
+        assert len(result['from_imports']) == 2
+        assert 'src.utils.a' in result['from_imports']
+        assert 'src.utils.b' in result['from_imports']
+        assert len(result['imports']) == 0
+
+    finally:
+        # Cleanup
+        import shutil
+        shutil.rmtree(temp_dir)
+        os.remove(file_path)
+
+
+def test_parse_relative_import_with_module():
+    """Test parsing a relative import with a module component (e.g., from ..subpackage import module)."""
+    code = """
+from ..subpackage import module
+"""
+    file_path = create_temp_python_file(code)
+
+    # Create a temporary project structure to provide project_root
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Create: project/src/utils/helpers.py
+        src_dir = Path(temp_dir) / 'src' / 'utils'
+        src_dir.mkdir(parents=True)
+        helpers_file = src_dir / 'helpers.py'
+        helpers_file.write_text(code)
+
+        # Also create the subpackage directory (as a sibling to utils) for the import to be resolvable
+        subpackage_dir = Path(temp_dir) / 'src' / 'subpackage'
+        subpackage_dir.mkdir(parents=True)
+        # We don't need to create the module file because the resolver only cares about the path.
+
+        # Set project_root to the temp_dir
+        project_root = str(temp_dir)
+
+        result = parse_imports(str(helpers_file), project_root)
+
+        # Expect: from_imports contains the resolved module base (src.module)
+        # Because we are going up two levels from helpers.py:
+        #   helpers.py is in src/utils, so level=2 goes up to src, then we add subpackage -> src.subpackage
+        #   Then we import 'module' from subpackage, so the resolved module is src.subpackage.module?
+        # Wait, let's think:
+        #   File: /project/src/utils/helpers.py
+        #   Import: from ..subpackage import module
+        #   We go up two levels from the file's directory:
+        #       file_dir = /project/src/utils
+        #       level=2 -> go up 1 (because level-1) -> /project/src
+        #   Then we add the module 'subpackage' -> /project/src/subpackage
+        #   Then we convert to module notation: src.subpackage
+        #   Then we add the imported name 'module'?
+        #   But note: the existing resolver only returns the package path, not the imported name.
+        #   However, our new code for bare relative imports does not apply here because module is not None.
+        #   So we are using the old branch: resolve_relative_import(file_path, module, level, project_root)
+        #   This returns the directory of the module as a module path (without the imported name).
+        #   The analyzer's convention is to record the module base (the package) in from_imports.
+        #   So we expect 'src.subpackage' (the package containing the module) and not the imported name.
+        #   This matches the existing behavior for non-bare relative imports.
+
+        assert len(result['from_imports']) == 1
+        assert 'src.subpackage' in result['from_imports']
+        assert len(result['imports']) == 0
+
+    finally:
+        # Cleanup
+        import shutil
+        shutil.rmtree(temp_dir)
+        os.remove(file_path)

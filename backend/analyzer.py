@@ -57,21 +57,41 @@ def parse_imports(file_path: str, project_root: Optional[str] = None) -> Dict[st
 
                 # Handle relative imports (from . import x or from .. import y)
                 if node.level > 0:
-                    # Resolve relative import to absolute path
                     if project_root:
-                        resolved = resolve_relative_import(
-                            file_path,
-                            module,
-                            node.level,
-                            project_root
-                        )
-                        if resolved:
-                            from_imports.append(resolved)
+                        # When module is None, we have bare relative imports like "from . import x"
+                        # In this case, we need to resolve each imported name as a relative target
+                        if module is None:
+                            # For "from . import sibling", resolve each alias as the relative target
+                            for alias in node.names:
+                                resolved = resolve_relative_import(
+                                    file_path,
+                                    alias.name,
+                                    node.level,
+                                    project_root
+                                )
+                                if resolved:
+                                    from_imports.append(resolved)
+                        else:
+                            # For "from ..subpackage import module", resolve the module normally
+                            resolved = resolve_relative_import(
+                                file_path,
+                                module,
+                                node.level,
+                                project_root
+                            )
+                            if resolved:
+                                from_imports.append(resolved)
                     else:
                         # If no project root, store as relative
                         prefix = '.' * node.level
-                        module_name = f"{prefix}{module}" if module else prefix
-                        from_imports.append(module_name)
+                        if module:
+                            module_name = f"{prefix}{module}"
+                            from_imports.append(module_name)
+                        else:
+                            # Bare relative import without project root
+                            from_imports.extend(
+                                f"{prefix}{alias.name}" for alias in node.names
+                            )
                 else:
                     # Absolute import
                     if module:
