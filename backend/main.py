@@ -113,6 +113,7 @@ async def analyze_project(file: UploadFile = File(...)):
 
         # Step 7: Build project dependency and reverse-dependency mappings
         dependency_data = analyzer.build_dependency_graph(python_files, temp_dir)
+        circular_imports = analyzer.detect_circular_imports(dependency_data['graph'])
 
         # Step 8: Return legacy import data plus additive graph information
         total_imports = sum(f['import_count'] for f in analyzed_files)
@@ -125,7 +126,8 @@ async def analyze_project(file: UploadFile = File(...)):
             dependency_graph=dependency_data['graph'],
             imported_by=dependency_data['imported_by'],
             import_counts=dependency_data['import_counts'],
-            unresolved_imports=dependency_data['unresolved_imports']
+            unresolved_imports=dependency_data['unresolved_imports'],
+            circular_imports=circular_imports
         )
 
         return response.model_dump()

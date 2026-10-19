@@ -91,7 +91,32 @@ def test_analyze_returns_dependency_graph():
     assert data["dependency_graph"]["utils.py"] == ["helpers.py"]
     assert data["imported_by"]["config.py"] == ["main.py"]
     assert data["import_counts"]["main.py"] == 2
+    assert data["circular_imports"] == []
     assert data["files"]
+
+
+def test_analyze_returns_circular_imports():
+    """Test that API responses include formatted cycle information."""
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("a.py", "import b\n")
+        zf.writestr("b.py", "import c\n")
+        zf.writestr("c.py", "import a\n")
+    zip_buffer.seek(0)
+
+    response = client.post(
+        "/api/analyze",
+        files={"file": ("cycle.zip", zip_buffer, "application/zip")}
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_files"] == 3
+    assert data["dependency_graph"]["a.py"] == ["b.py"]
+    assert data["circular_imports"] == [{
+        "cycle": ["a.py", "b.py", "c.py", "a.py"],
+        "description": "a.py → b.py → c.py → a.py",
+    }]
 
 
 def test_analyze_rejects_oversized_file():

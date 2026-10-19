@@ -23,6 +23,13 @@ class DependencyGraph(BaseModel):
     unresolved_imports: Dict[str, List[str]] = Field(default_factory=dict)
 
 
+class CircularImport(BaseModel):
+    """A directed circular dependency formatted for display."""
+
+    cycle: List[str] = Field(default_factory=list)
+    description: str = ""
+
+
 class AnalysisResponse(BaseModel):
     """Backward-compatible analysis response with graph data."""
 
@@ -35,3 +42,4 @@ class AnalysisResponse(BaseModel):
     imported_by: Dict[str, List[str]] = Field(default_factory=dict)
     import_counts: Dict[str, int] = Field(default_factory=dict)
     unresolved_imports: Dict[str, List[str]] = Field(default_factory=dict)
+    circular_imports: List[CircularImport] = Field(default_factory=list)

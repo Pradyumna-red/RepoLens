@@ -238,10 +238,10 @@ def build_dependency_graph(
         imported_names = imports['imports'] + imports['from_imports']
         for imported_name in imported_names:
             target_node = resolve_import(imported_name)
-            if target_node and target_node != source_node:
+            if target_node:
                 if target_node not in graph[source_node]:
                     graph[source_node].append(target_node)
-            elif not target_node:
+            else:
                 if imported_name not in unresolved[source_node]:
                     unresolved[source_node].append(imported_name)
 
@@ -262,6 +262,47 @@ def build_dependency_graph(
         'import_counts': {node: len(graph[node]) for node in nodes},
         'unresolved_imports': unresolved,
     }
+
+
+def detect_circular_imports(graph: Dict[str, List[str]]) -> List[Dict[str, Any]]:
+    """Return each directed cycle in an adjacency-list dependency graph once.
+
+    The graph is treated as data only.  Each cycle is represented as a closed
+    chain whose first node is repeated at the end for display.
+    """
+    nodes = sorted(set(graph) | {neighbor for targets in graph.values() for neighbor in targets})
+    cycles = {}
+
+    def canonical_cycle(path: List[str], start_index: int) -> tuple[str, ...]:
+        cycle = path[start_index:]
+        rotations = [
+            tuple(cycle[index:] + cycle[:index])
+            for index in range(len(cycle))
+        ]
+        return min(rotations)
+
+    def dfs(start: str, current: str, path: List[str], in_path: set[str]) -> None:
+        for neighbor in sorted(graph.get(current, [])):
+            if neighbor == start:
+                key = canonical_cycle(path, 0)
+                cycles[key] = list(key) + [key[0]]
+            elif neighbor not in in_path and neighbor in graph:
+                in_path.add(neighbor)
+                path.append(neighbor)
+                dfs(start, neighbor, path, in_path)
+                path.pop()
+                in_path.remove(neighbor)
+
+    for start in nodes:
+        dfs(start, start, [start], {start})
+
+    return [
+        {
+            'cycle': cycle,
+            'description': ' → '.join(cycle),
+        }
+        for cycle in (cycles[key] for key in sorted(cycles))
+    ]
 
 
 def get_all_imports(file_path: str, project_root: Optional[str] = None) -> List[str]:
