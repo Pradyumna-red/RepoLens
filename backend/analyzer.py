@@ -6,7 +6,7 @@ Extracts import statements from Python source files safely without execution.
 import ast
 import os
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Sequence, Union, Any
 
 
 def parse_imports(file_path: str, project_root: Optional[str] = None) -> Dict[str, List[str]]:
@@ -165,6 +165,103 @@ def resolve_relative_import(
 
     except Exception:
         return None
+
+
+def build_dependency_graph(
+    python_files: Sequence[Union[str, Dict[str, str]]],
+    project_root: str
+) -> Dict[str, Any]:
+    """
+    Build project-local dependency and reverse-dependency mappings.
+
+    External or unresolved imports are reported separately and never become
+    project graph edges. Source files are parsed with ``parse_imports`` only;
+    uploaded code is never imported or executed.
+
+    Args:
+        python_files: File paths or file metadata dictionaries returned by
+            ``file_handler.find_python_files``.
+        project_root: Root directory containing the project files.
+
+    Returns:
+        A dictionary containing ``graph``, ``imported_by``, ``import_counts``,
+        and ``unresolved_imports`` mappings keyed by project-relative paths.
+    """
+    root = Path(project_root).resolve()
+    file_paths = []
+    for item in python_files:
+        path_value = item['path'] if isinstance(item, dict) else item
+        path = Path(path_value)
+        if not path.is_absolute():
+            path = root / path
+        file_paths.append(path.resolve())
+
+    # Use forward-slash relative paths as stable graph node identifiers.
+    project_files = [
+        (path, str(path.relative_to(root)).replace('\\', '/'))
+        for path in file_paths
+        if path.is_relative_to(root) and path.suffix == '.py'
+    ]
+    project_files.sort(key=lambda item: item[1])
+    nodes = [node for _, node in project_files]
+    node_set = set(nodes)
+
+    module_to_node = {}
+    for node in nodes:
+        module_path = node[:-3] if node.endswith('.py') else node
+        if module_path.endswith('/__init__'):
+            module_path = module_path[:-9].rstrip('/')
+        module_name = module_path.replace('/', '.')
+        module_to_node[module_name] = node
+
+    def resolve_import(import_name: str) -> Optional[str]:
+        """Resolve an import name to a known project node, if possible."""
+        normalized = import_name.replace('\\', '/').lstrip('./')
+        if normalized.endswith('.py'):
+            normalized = normalized[:-3]
+
+        for candidate in (normalized, normalized.replace('.', '/')):
+            direct = f"{candidate}.py"
+            package = f"{candidate}/__init__.py"
+            if direct in node_set:
+                return direct
+            if package in node_set:
+                return package
+        return module_to_node.get(import_name)
+
+    graph = {node: [] for node in nodes}
+    unresolved = {node: [] for node in nodes}
+
+    for source_path, source_node in project_files:
+        imports = parse_imports(str(source_path), str(root))
+
+        imported_names = imports['imports'] + imports['from_imports']
+        for imported_name in imported_names:
+            target_node = resolve_import(imported_name)
+            if target_node and target_node != source_node:
+                if target_node not in graph[source_node]:
+                    graph[source_node].append(target_node)
+            elif not target_node:
+                if imported_name not in unresolved[source_node]:
+                    unresolved[source_node].append(imported_name)
+
+    for node in nodes:
+        graph[node].sort()
+        unresolved[node].sort()
+
+    imported_by = {node: [] for node in nodes}
+    for source_node, targets in graph.items():
+        for target_node in targets:
+            imported_by[target_node].append(source_node)
+    for node in nodes:
+        imported_by[node].sort()
+
+    return {
+        'graph': graph,
+        'imported_by': imported_by,
+        'import_counts': {node: len(graph[node]) for node in nodes},
+        'unresolved_imports': unresolved,
+    }
 
 
 def get_all_imports(file_path: str, project_root: Optional[str] = None) -> List[str]:

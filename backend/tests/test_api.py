@@ -68,6 +68,32 @@ def test_analyze_with_valid_zip():
     assert "module.py" in file_names
 
 
+def test_analyze_returns_dependency_graph():
+    """Test that analysis retains legacy fields and adds graph data."""
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("main.py", "import utils\nimport config\n")
+        zf.writestr("utils.py", "import helpers\n")
+        zf.writestr("config.py", "")
+        zf.writestr("helpers.py", "")
+    zip_buffer.seek(0)
+
+    response = client.post(
+        "/api/analyze",
+        files={"file": ("graph.zip", zip_buffer, "application/zip")}
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_files"] == 4
+    assert data["total_imports"] == 3
+    assert data["dependency_graph"]["main.py"] == ["config.py", "utils.py"]
+    assert data["dependency_graph"]["utils.py"] == ["helpers.py"]
+    assert data["imported_by"]["config.py"] == ["main.py"]
+    assert data["import_counts"]["main.py"] == 2
+    assert data["files"]
+
+
 def test_analyze_rejects_oversized_file():
     """Test that files over 50MB are rejected."""
     # Create a large fake file (over 50MB)

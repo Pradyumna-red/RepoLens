@@ -10,6 +10,7 @@ import os
 import security
 import file_handler
 import analyzer
+from models import AnalysisResponse
 
 # Create FastAPI application instance
 app = FastAPI(
@@ -110,16 +111,24 @@ async def analyze_project(file: UploadFile = File(...)):
                 'import_count': len(import_data['imports']) + len(import_data['from_imports'])
             })
 
-        # Step 7: Return results with import information
-        total_imports = sum(f['import_count'] for f in analyzed_files)
+        # Step 7: Build project dependency and reverse-dependency mappings
+        dependency_data = analyzer.build_dependency_graph(python_files, temp_dir)
 
-        return {
-            "message": "Analysis complete",
-            "project_name": file.filename.replace('.zip', ''),
-            "total_files": len(analyzed_files),
-            "total_imports": total_imports,
-            "files": analyzed_files
-        }
+        # Step 8: Return legacy import data plus additive graph information
+        total_imports = sum(f['import_count'] for f in analyzed_files)
+        response = AnalysisResponse(
+            message="Analysis complete",
+            project_name=file.filename.replace('.zip', ''),
+            total_files=len(analyzed_files),
+            total_imports=total_imports,
+            files=analyzed_files,
+            dependency_graph=dependency_data['graph'],
+            imported_by=dependency_data['imported_by'],
+            import_counts=dependency_data['import_counts'],
+            unresolved_imports=dependency_data['unresolved_imports']
+        )
+
+        return response.model_dump()
 
     except HTTPException:
         # Re-raise HTTP exceptions (validation errors)
