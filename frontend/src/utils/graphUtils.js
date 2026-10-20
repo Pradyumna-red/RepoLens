@@ -12,11 +12,39 @@ export const transformToReactFlow = (analysisData, selectedPath = null) => {
       .map(([source]) => source),
   )
 
+  // Calculate dynamic node dimensions based on filename length
   const nodes = files.map((file, index) => {
-    const column = index % 3
-    const row = Math.floor(index / 3)
     const isSelected = file.path === selectedPath
     const isConnected = selectedPath && (selectedTargets.has(file.path) || selectedSources.has(file.path))
+
+    // Calculate dynamic dimensions for the node label
+    const label = file.path;
+    const maxWidth = 280; // Maximum width for very long paths
+    const minWidth = 120; // Minimum width for readability
+    const charWidth = 7.5; // Approximate width of a character in 10px monospace font
+    const padding = 24; // Horizontal padding (12px each side)
+
+    // Calculate width based on content, constrained by min/max
+    const contentWidth = label.length * charWidth + padding;
+    const width = Math.min(Math.max(contentWidth, minWidth), maxWidth);
+
+    // Calculate height needed for wrapped text (assuming ~12px line height)
+    const estimatedLines = Math.max(1, Math.ceil(contentWidth / maxWidth));
+    const lineHeight = 12;
+    const verticalPadding = 20; // Top and bottom padding
+    const height = Math.min(Math.max(estimatedLines * lineHeight + verticalPadding, 40), 80); // Min 40px, max 80px
+
+    // Use a simple grid layout but with more sophisticated spacing
+    // We'll use columns based on average expected width to prevent overlap
+    const column = index % 3;
+    const row = Math.floor(index / 3);
+    const baseX = column * (maxWidth + 30); // 30px gap between columns
+    const baseY = row * (60 + 20); // Base row height + gap
+
+    // Fine-tune positioning based on actual node width to center in column
+    const offsetX = (maxWidth - width) / 2;
+    const positionX = baseX + offsetX;
+    const positionY = baseY;
 
     return {
       id: file.path,
@@ -26,7 +54,9 @@ export const transformToReactFlow = (analysisData, selectedPath = null) => {
         importedBy: importedBy[file.path]?.length || 0,
         importCount: analysisData.import_counts?.[file.path] || file.import_count || 0,
       },
-      position: { x: column * 250, y: row * 140 },
+      position: { x: positionX, y: positionY },
+      width: width,
+      height: height,
       className: isSelected ? 'graph-node-selected' : isConnected ? 'graph-node-connected' : '',
     }
   })
