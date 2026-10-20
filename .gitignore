@@ -60,6 +60,10 @@ tmp/
 htmlcov/
 .pytest_cache/
 
+
 # Logs
 *.log
 logs/
+
+demo_project.zip
+django-ecommerce-master-1.zip
