@@ -12,15 +12,36 @@ def test_detects_simple_cycle_and_formats_description():
     }]
 
 
-def test_detects_long_cycle():
+def test_detects_three_module_cycle():
     result = detect_circular_imports({
         "a.py": ["b.py"],
         "b.py": ["c.py"],
         "c.py": ["a.py"],
     })
 
-    assert result[0]["cycle"] == ["a.py", "b.py", "c.py", "a.py"]
-    assert result[0]["description"] == "a.py → b.py → c.py → a.py"
+    assert result == [{
+        "cycle": ["a.py", "b.py", "c.py", "a.py"],
+        "description": "a.py → b.py → c.py → a.py",
+    }]
+
+
+def test_detects_long_cycle():
+    result = detect_circular_imports({
+        "a.py": ["b.py"],
+        "b.py": ["c.py"],
+        "c.py": ["d.py"],
+        "d.py": ["e.py"],
+        "e.py": ["a.py"],
+    })
+
+    assert result[0]["cycle"] == ["a.py", "b.py", "c.py", "d.py", "e.py", "a.py"]
+
+
+def test_duplicate_self_edges_are_reported_once():
+    assert detect_circular_imports({"self.py": ["self.py", "self.py"]}) == [{
+        "cycle": ["self.py", "self.py"],
+        "description": "self.py → self.py",
+    }]
 
 
 def test_detects_self_import():

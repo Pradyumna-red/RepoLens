@@ -86,6 +86,68 @@ def test_relative_and_from_imports_resolve_to_project_files(tmp_path):
     assert result["imported_by"]["pkg/helpers.py"] == ["pkg/main.py"]
 
 
+def test_package_and_relative_cycles_resolve_to_project_files(tmp_path):
+    files = write_project(
+        tmp_path,
+        {
+            "pkg/__init__.py": "",
+            "pkg/a.py": "from . import b\n",
+            "pkg/b.py": "from pkg import a\n",
+        },
+    )
+
+    result = build_dependency_graph(files, str(tmp_path))
+
+    assert result["graph"]["pkg/a.py"] == ["pkg/b.py"]
+    assert result["graph"]["pkg/b.py"] == ["pkg/a.py"]
+
+
+def test_wrapped_project_imports_resolve_without_wrapper_package(tmp_path):
+    files = write_project(
+        tmp_path,
+        {
+            "django-ecommerce-master/djecommerce/__init__.py": "",
+            "django-ecommerce-master/djecommerce/urls.py": (
+                "from djecommerce.wsgi import application\n"
+            ),
+            "django-ecommerce-master/djecommerce/wsgi.py": (
+                "from djecommerce.urls import urlpatterns\n"
+            ),
+            "django-ecommerce-master/core/__init__.py": "",
+            "django-ecommerce-master/core/models.py": "",
+        },
+    )
+
+    result = build_dependency_graph(files, str(tmp_path))
+
+    assert result["graph"] == {
+        "django-ecommerce-master/core/__init__.py": [],
+        "django-ecommerce-master/core/models.py": [],
+        "django-ecommerce-master/djecommerce/__init__.py": [],
+        "django-ecommerce-master/djecommerce/urls.py": [
+            "django-ecommerce-master/djecommerce/wsgi.py",
+        ],
+        "django-ecommerce-master/djecommerce/wsgi.py": [
+            "django-ecommerce-master/djecommerce/urls.py",
+        ],
+    }
+
+
+def test_unwrapped_project_imports_still_resolve(tmp_path):
+    files = write_project(
+        tmp_path,
+        {
+            "core/__init__.py": "",
+            "core/models.py": "",
+            "main.py": "from core import models\n",
+        },
+    )
+
+    result = build_dependency_graph(files, str(tmp_path))
+
+    assert result["graph"]["main.py"] == ["core/models.py"]
+
+
 def test_duplicate_imports_and_syntax_errors_are_safe(tmp_path):
     files = write_project(
         tmp_path,

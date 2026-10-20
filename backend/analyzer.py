@@ -167,6 +167,50 @@ def resolve_relative_import(
         return None
 
 
+def _iter_import_references(file_path: Path, project_root: Path) -> List[str]:
+    """Return import module candidates, including names imported from packages."""
+    try:
+        source = file_path.read_text(encoding='utf-8')
+        tree = ast.parse(source, filename=str(file_path))
+    except (OSError, SyntaxError):
+        return []
+
+    try:
+        relative_file = file_path.resolve().relative_to(project_root.resolve())
+    except ValueError:
+        return []
+
+    package_parts = list(relative_file.parts[:-1])
+    references = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            references.extend(alias.name for alias in node.names)
+            continue
+        if not isinstance(node, ast.ImportFrom):
+            continue
+
+        base_parts = package_parts if node.level else []
+        if node.level:
+            # One dot means the directory containing the importing module.
+            base_parts = package_parts[:max(0, len(package_parts) - node.level + 1)]
+        if node.module:
+            base_parts = base_parts + node.module.split('.')
+
+        base = '.'.join(base_parts)
+        # ``from package import module`` may refer to package/module.py.
+        # Prefer that concrete module over the package's __init__.py; imports
+        # of names defined only in __init__.py remain unresolved in the graph.
+        for alias in node.names:
+            references.append('.'.join(part for part in (base, alias.name) if part))
+        # For ``from .config import VALUE`` the module itself is the
+        # project dependency.  Do not add the bare package for ``from pkg
+        # import module`` because the concrete alias is the intended target.
+        if base and node.module and (node.level or '.' in node.module):
+            references.append(base)
+
+    return references
+
+
 def build_dependency_graph(
     python_files: Sequence[Union[str, Dict[str, str]]],
     project_root: str
@@ -206,13 +250,29 @@ def build_dependency_graph(
     nodes = [node for _, node in project_files]
     node_set = set(nodes)
 
+    # ZIP uploads commonly contain one non-package wrapper directory, such as
+    # ``project-name/``. Keep it in node IDs, but also index the files beneath
+    # it by their actual Python package names for import resolution.
+    wrapper = None
+    first_parts = {node.split('/', 1)[0] for node in nodes if '/' in node}
+    if len(first_parts) == 1:
+        candidate = next(iter(first_parts))
+        candidate_init = f'{candidate}/__init__.py'
+        if candidate_init not in node_set and all(
+            node.startswith(f'{candidate}/') for node in nodes
+        ):
+            wrapper = candidate
+
     module_to_node = {}
     for node in nodes:
         module_path = node[:-3] if node.endswith('.py') else node
         if module_path.endswith('/__init__'):
             module_path = module_path[:-9].rstrip('/')
-        module_name = module_path.replace('/', '.')
-        module_to_node[module_name] = node
+        module_names = [module_path.replace('/', '.')]
+        if wrapper and module_path.startswith(f'{wrapper}/'):
+            module_names.append(module_path[len(wrapper) + 1:].replace('/', '.'))
+        for module_name in module_names:
+            module_to_node[module_name] = node
 
     def resolve_import(import_name: str) -> Optional[str]:
         """Resolve an import name to a known project node, if possible."""
@@ -233,9 +293,7 @@ def build_dependency_graph(
     unresolved = {node: [] for node in nodes}
 
     for source_path, source_node in project_files:
-        imports = parse_imports(str(source_path), str(root))
-
-        imported_names = imports['imports'] + imports['from_imports']
+        imported_names = _iter_import_references(source_path, root)
         for imported_name in imported_names:
             target_node = resolve_import(imported_name)
             if target_node:
